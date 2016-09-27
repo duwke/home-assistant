@@ -237,6 +237,10 @@ ATTR_LOCATION = 'location'
 
 ATTR_BATTERY_LEVEL = 'battery_level'
 
+# Status of the device/node 
+ATTR_IS_FAILED = 'is_failed'
+ATTR_IS_AWAKE = 'is_awake'
+
 # For devices which support a code attribute
 ATTR_CODE = 'code'
 ATTR_CODE_FORMAT = 'code_format'

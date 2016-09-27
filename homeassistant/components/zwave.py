@@ -12,7 +12,7 @@ import voluptuous as vol
 
 from homeassistant.helpers import discovery
 from homeassistant.const import (
-    ATTR_BATTERY_LEVEL, ATTR_LOCATION, ATTR_ENTITY_ID,
+    ATTR_BATTERY_LEVEL, ATTR_LOCATION, ATTR_IS_FAILED, ATTR_IS_AWAKE, ATTR_ENTITY_ID,
     CONF_CUSTOMIZE, EVENT_HOMEASSISTANT_START,
     EVENT_HOMEASSISTANT_STOP)
 from homeassistant.helpers.event import track_time_change
@@ -103,6 +103,11 @@ TYPE_BYTE = "Byte"
 TYPE_BOOL = "Bool"
 TYPE_DECIMAL = "Decimal"
 
+NOTIFICATION_CODE_MSG_COMPLETE = 0
+NOTIFICATION_CODE_TIMEOUT = 1
+NOTIFICATION_CODE_AWAKE = 3
+NOTIFICATION_CODE_DEAD = 5
+NOTIFICATION_CODE_ALIVE = 6	
 
 # List of tuple (DOMAIN, discovered service, supported command classes,
 # value type, genre type, specific device class).
@@ -543,8 +548,44 @@ class ZWaveDeviceEntity:
 
     def __init__(self, value, domain):
         """Initialize the z-Wave device."""
+        from pydispatch import dispatcher
+        from openzwave.network import ZWaveNetwork
+        self._icon = None 
+        self._available = True
         self._value = value
         self.entity_id = "{}.{}".format(domain, self._object_id())
+        dispatcher.connect(
+            self.node_notification, ZWaveNetwork.SIGNAL_NOTIFICATION)
+
+    # pylint: disable=e1101
+    def node_notification(self, args):
+        """ determine the status of the device """
+        #_LOGGER.info("dwknode2 notication - " + self.name + " " + PrettyPrinter().pformat(args))
+        if args['nodeId'] == self._value.node.node_id:
+            if args['notificationCode'] == NOTIFICATION_CODE_DEAD:
+                # node is dead
+                _LOGGER.info("zwave controller has declared " + self.entity_id + " dead")
+                self._icon = "mdi:sleep"
+                self._available = False
+            elif args['notificationCode'] == NOTIFICATION_CODE_ALIVE or args['notificationCode'] == NOTIFICATION_CODE_AWAKE:
+                self._icon = None
+                self._available = True
+            elif args['notificationCode'] == NOTIFICATION_CODE_TIMEOUT:
+                self._icon = "mdi:sleep"  #not dead yet, but likely the last message did not reach the destination.  It could still be forwarded correctly
+            elif args['notificationCode'] == NOTIFICATION_CODE_MSG_COMPLETE:
+                self._icon = None
+
+            self.update_ha_state(True) # this function will always be defined
+
+    @property
+    def icon(self):
+        """Return the icon to use in the frontend, if any."""
+        return self._icon
+
+    @property
+    def available(self) -> bool:
+        """Return True if entity is available."""
+        return self._available
 
     @property
     def should_poll(self):
@@ -575,6 +616,8 @@ class ZWaveDeviceEntity:
         """Return the device specific state attributes."""
         attrs = {
             ATTR_NODE_ID: self._value.node.node_id,
+            ATTR_IS_FAILED: self._value.node.is_failed,
+            ATTR_IS_AWAKE: self._value.node.is_awake,
         }
 
         battery_level = self._value.node.get_battery_level()
